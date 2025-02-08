@@ -1,0 +1,231 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  TextField,
+  Button,
+  Card,
+  CardContent,
+  CardMedia,
+  Grid,
+  Container,
+  IconButton,
+  Badge,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from '@mui/material';
+import { ShoppingCart, Chat, LocationOn } from '@mui/icons-material';
+import { initializeApp } from 'firebase/app';
+import { getDatabase, ref, push, onValue } from 'firebase/database';
+import algoliasearch from 'algoliasearch';
+
+// Firebase configuration
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  databaseURL: "YOUR_DATABASE_URL",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID",
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
+
+// Algolia configuration
+const client = algoliasearch('YOUR_APP_ID', 'YOUR_API_KEY');
+const index = client.initIndex('items');
+
+function App() {
+  const [items, setItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [cartCount, setCartCount] = useState(0);
+  const [messages, setMessages] = useState([]);
+  const [location, setLocation] = useState(null);
+  const [openLocationDialog, setOpenLocationDialog] = useState(false);
+
+  // Fetch items from the backend
+  useEffect(() => {
+    axios.get('/api/items').then((response) => {
+      setItems(response.data);
+    });
+
+    // Listen for messages
+    listenForMessages('user1', (messages) => {
+      setMessages(messages);
+    });
+
+    // Ask for location permission
+    setOpenLocationDialog(true);
+  }, []);
+
+  // Handle search with Algolia
+  const handleSearch = async () => {
+    const results = await searchItems(searchTerm, 'price < 100');
+    setItems(results.hits);
+  };
+
+  // Add item to cart
+  const addToCart = (item) => {
+    setCartCount(cartCount + 1);
+    // Add logic to store the item in the cart
+  };
+
+  // Send a message
+  const sendMessage = (sender, receiver, message) => {
+    const messagesRef = ref(database, 'messages');
+    push(messagesRef, { sender, receiver, message, timestamp: Date.now() });
+  };
+
+  // Listen for messages
+  const listenForMessages = (userId, callback) => {
+    const messagesRef = ref(database, 'messages');
+    onValue(messagesRef, (snapshot) => {
+      const messages = [];
+      snapshot.forEach((childSnapshot) => {
+        const message = childSnapshot.val();
+        if (message.receiver === userId || message.sender === userId) {
+          messages.push(message);
+        }
+      });
+      callback(messages);
+    });
+  };
+
+  // Track user location
+  const trackLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        axios.post('/api/location', { latitude: position.coords.latitude, longitude: position.coords.longitude });
+      });
+    }
+  };
+
+  return (
+    <div>
+      <AppBar position="static">
+        <Toolbar>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            Rent-n-Go
+          </Typography>
+          <TextField
+            label="Search for items..."
+            variant="outlined"
+            size="small"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{ marginRight: '10px' }}
+          />
+          <Button variant="contained" onClick={handleSearch}>
+            Search
+          </Button>
+          <IconButton color="inherit">
+            <Badge badgeContent={cartCount} color="error">
+              <ShoppingCart />
+            </Badge>
+          </IconButton>
+          <IconButton color="inherit">
+            <Badge badgeContent={messages.length} color="error">
+              <Chat />
+            </Badge>
+          </IconButton>
+          <IconButton color="inherit" onClick={() => setOpenLocationDialog(true)}>
+            <LocationOn />
+          </IconButton>
+        </Toolbar>
+      </AppBar>
+
+      <Container>
+        <Grid container spacing={3} sx={{ marginTop: '20px' }}>
+          {items.map((item) => (
+            <Grid item key={item.id} xs={12} sm={6} md={4}>
+              <Card>
+                <CardMedia
+                  component="img"
+                  height="140"
+                  image={item.image}
+                  alt={item.name}
+                />
+                <CardContent>
+                  <Typography variant="h5">{item.name}</Typography>
+                  <Typography variant="body2">{item.description}</Typography>
+                  <Typography variant="h6">${item.price}</Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => addToCart(item)}
+                  >
+                    Add to Cart
+                  </Button>
+                  <Button variant="outlined" color="secondary">
+                    Rent Now
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      </Container>
+
+      {/* Location Permission Dialog */}
+      <Dialog open={openLocationDialog} onClose={() => setOpenLocationDialog(false)}>
+        <DialogTitle>Location Permission</DialogTitle>
+        <DialogContent>
+          <Typography>Allow Rent-n-Go to access your location to find items near you?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenLocationDialog(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              trackLocation();
+              setOpenLocationDialog(false);
+            }}
+          >
+            Allow
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </div>
+  );
+}
+
+export default App;
+const express = require('express');
+const bodyParser = require('body-parser');
+const admin = require('firebase-admin');
+const stripe = require('stripe')('your-stripe-secret-key');
+const app = express();
+const port = 3000;
+
+// Initialize Firebase
+const serviceAccount = require('./path/to/serviceAccountKey.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+app.use(bodyParser.json());
+app.use(express.static('public'));
+
+// Routes
+const authRoutes = require('./routes/authRoutes');
+const itemRoutes = require('./routes/itemRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+
+app.use('/api/auth', authRoutes);
+app.use('/api/items', itemRoutes);
+app.use('/api/payments', paymentRoutes);
+
+// Start server
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+});
