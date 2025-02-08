@@ -198,34 +198,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
-const express = require('express');
-const bodyParser = require('body-parser');
-const admin = require('firebase-admin');
-const stripe = require('stripe')('your-stripe-secret-key');
-const app = express();
-const port = 3000;
-
-// Initialize Firebase
-const serviceAccount = require('./path/to/serviceAccountKey.json');
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-app.use(bodyParser.json());
-app.use(express.static('public'));
-
-// Routes
-const authRoutes = require('./routes/authRoutes');
-const itemRoutes = require('./routes/itemRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
-
-app.use('/api/auth', authRoutes);
-app.use('/api/items', itemRoutes);
-app.use('/api/payments', paymentRoutes);
-
-// Start server
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
